@@ -1,0 +1,66 @@
+{
+  "name": "@kaishen/orm",
+  "version": "1.1.1",
+  "description": "",
+  "main": "build/lib/index.js",
+  "types": "build/@types/index.d.ts",
+  "directories": {
+    "test": "test"
+  },
+  "scripts": {
+    "test": "mocha",
+    "cover": "nyc mocha",
+    "watch": "nodemon",
+    "lint": "tslint -c tslint.json -p tsconfig.json",
+    "build": "npm run lint && tsc",
+    "start": "export NODE_ENV=test&& node build/lib/app.js"
+  },
+  "author": "",
+  "engines": {
+    "node": ">= 10.15"
+  },
+  "license": "ISC",
+  "devDependencies": {
+    "@types/chai": "^4.1.7",
+    "@types/chai-http": "^4.2.0",
+    "@types/mocha": "^5.2.7",
+    "@types/mysql": "^2.15.6",
+    "@types/node": "^12.0.2",
+    "@types/redis": "^2.8.13",
+    "chai": "^4.2.0",
+    "chai-http": "^4.3.0",
+    "coveralls": "^3.0.4",
+    "mocha": "^6.1.4",
+    "nyc": "^14.1.1",
+    "ts-node": "^8.3.0",
+    "typescript": "^3.5.2"
+  },
+  "nyc": {
+    "include": [
+      "test/**/*.ts"
+    ],
+    "exclude": [
+      "typings",
+      "**/*.nyc.ts"
+    ],
+    "extension": [
+      ".ts",
+      ".js"
+    ],
+    "require": [
+      "./node_modules/ts-node"
+    ],
+    "reporter": [
+      "lcov",
+      "text",
+      "text-summary"
+    ],
+    "cache": false,
+    "report-dir": "./coverage",
+    "all": true
+  },
+  "dependencies": {
+    "mysql": "^2.17.1",
+    "redis": "^2.8.0"
+  }
+}
