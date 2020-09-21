@@ -405,12 +405,4 @@ class Select {
     }
 }
 
-// export default Mysql;
-
-const a = null;
-const database = new Database(a);
-
-console.log(database.table('players')
-.delete()
-.where('id = ?', 100)
-.finish().sql);
+export default Mysql;
