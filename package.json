@@ -1,54 +1,23 @@
 {
   "name": "@kaishen/orm",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "",
-  "main": "build/lib/index.js",
-  "types": "build/@types/index.d.ts",
+  "main": "./lib/index.js",
+  "types": "./@types/index.d.ts",
   "directories": {
     "test": "test"
   },
   "scripts": {
-    "test": "mocha",
-    "cover": "nyc mocha",
-    "watch": "nodemon",
     "lint": "tslint -c tslint.json -p tsconfig.json",
-    "build": "npm run lint && tsc",
-    "start": "export NODE_ENV=test&& node build/lib/app.js"
+    "build": "node build.js"
   },
   "author": "",
-  "engines": {
-    "node": ">= 10.15"
-  },
   "license": "ISC",
   "devDependencies": {
     "@types/node": "^14.11.1",
     "cz-conventional-changelog": "^3.3.0",
     "ts-node": "^8.6.2",
     "typescript": "^3.8.3"
-  },
-  "nyc": {
-    "include": [
-      "test/**/*.ts"
-    ],
-    "exclude": [
-      "typings",
-      "**/*.nyc.ts"
-    ],
-    "extension": [
-      ".ts",
-      ".js"
-    ],
-    "require": [
-      "./node_modules/ts-node"
-    ],
-    "reporter": [
-      "lcov",
-      "text",
-      "text-summary"
-    ],
-    "cache": false,
-    "report-dir": "./coverage",
-    "all": true
   },
   "dependencies": {
     "mysql2": "^2.1.0"

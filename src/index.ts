@@ -1,12 +1,33 @@
 import * as mysql from 'mysql2';
 
-class Mysql {
-    private host: string;
-    private port: number;
-    private username: string;
-    private password: string;
-    private database: string;
-    private pool: mysql.Pool;
+interface ContainerInterface {
+    get(name: string): Database;
+    set(name: string, db: Database): void;
+}
+
+const defaultContainer = new (class implements ContainerInterface {
+    private instances: {[propsName: string]: Database} = {};
+
+    get(name: string): Database {
+        return this.instances[name];
+    }
+
+    set(name: string, db: Database): void {
+        this.instances[name] = db;
+    };
+});
+
+const getConnection = (name: string): Database => {
+    return defaultContainer[name];
+}
+
+class Orm {
+    private readonly host: string;
+    private readonly port: number;
+    private readonly username: string;
+    private readonly password: string;
+    private readonly database: string;
+    private readonly pool: mysql.Pool;
 
     constructor(host: string, port: number, username: string, password: string, database: string) {
         this.host = host;
@@ -23,8 +44,10 @@ class Mysql {
         });
     }
 
-    authenticate(): Database {
-        return new Database(this.pool);
+    authenticate(name: string): Database {
+        const db = new Database(this.pool);
+        defaultContainer.set(name, db);
+        return db;
     }
 }
 
@@ -267,6 +290,7 @@ class Search {
 class Update {
     private search: Search;
     private database: Database;
+
     constructor(tableName: string, database: Database) {
         this.search = new Search('update', tableName);
         this.database = database;
@@ -293,7 +317,8 @@ class Update {
 
 class Insert {
     private search: Search;
-    private database: Database;
+    private readonly database: Database;
+
     constructor(tableName: string, database: Database) {
         this.search = new Search('insert', tableName);
         this.database = database;
@@ -313,6 +338,7 @@ class Insert {
 class Replace {
     private search: Search;
     private database: Database;
+
     constructor(tableName: string, database: Database) {
         this.search = new Search('replace', tableName);
         this.database = database;
@@ -332,6 +358,7 @@ class Replace {
 class Delete {
     private search: Search;
     private database: Database;
+
     constructor(tableName: string, database: Database) {
         this.search = new Search('delete', tableName);
         this.database = database;
@@ -353,7 +380,8 @@ class Delete {
 
 class Select {
     private search: Search;
-    private database: Database;
+    private readonly database: Database;
+
     constructor(tableName: string, database: Database) {
         this.search = new Search('select', tableName);
         this.database = database;
@@ -405,4 +433,4 @@ class Select {
     }
 }
 
-export default Mysql;
+export {Orm, Database, getConnection};

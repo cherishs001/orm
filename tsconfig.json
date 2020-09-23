@@ -2,13 +2,17 @@
 {
   "compilerOptions": {
     "target": "esnext",
+    "noImplicitThis": false,
+    "noImplicitAny": false,
+    "strictNullChecks": false,
+    "strictPropertyInitialization": false,
+    "strictFunctionTypes": false,
     "module": "commonjs",
     "outDir": "./build/lib",
     "declaration": true,
     "declarationDir": "./build/@types",
     "sourceMap": true,
     "removeComments": true,
-    "noImplicitAny": false,
     "preserveConstEnums": true,
     "experimentalDecorators": true,
     "emitDecoratorMetadata": true,
