@@ -1,24 +1,26 @@
-import * as mysql from 'mysql2';
+import * as mysql from 'mysql2/promise';
+import * as dayjs from 'dayjs';
+import * as genericPool from 'generic-pool';
 
 interface ContainerInterface {
-    get(name: string): Database;
-    set(name: string, db: Database): void;
+    get(name: string): Connection;
+    set(name: string, db: Connection): void;
 }
 
 const defaultContainer = new (class implements ContainerInterface {
-    private instances: {[propsName: string]: Database} = {};
+    private instances: { [propsName: string]: Connection } = {};
 
-    get(name: string): Database {
+    get(name: string): Connection {
         return this.instances[name];
     }
 
-    set(name: string, db: Database): void {
+    set(name: string, db: Connection): void {
         this.instances[name] = db;
     };
 });
 
-const getConnection = (name: string): Database => {
-    return defaultContainer[name];
+const getConnection = (name: string): Connection => {
+    return defaultContainer.get(name);
 }
 
 class Orm {
@@ -35,41 +37,134 @@ class Orm {
         this.username = username;
         this.password = password;
         this.database = database;
-        this.pool = mysql.createPool({
-            host: this.host,
-            user: this.username,
-            password: this.password,
-            port: this.port,
-            database: this.database,
-        });
+        // this.pool = mysql.createPool({
+        //     host: this.host,
+        //     user: this.username,
+        //     password: this.password,
+        //     port: this.port,
+        //     database: this.database,
+        // });
+        this.pool = genericPool.createPool({
+            create: () => mysql.createConnection({
+                host: this.host,
+                user: this.username,
+                password: this.password,
+                port: this.port,
+                database: this.database,
+            }),
+            destroy: (connection: mysql.Connection) => connection.end(),
+            validate: (connection: mysql.Connection) => connection.query(`SELECT 1`).then(() => true, () => false),
+        }, {
+            max: 5,
+            min: 0,
+            testOnBorrow: true,
+        })
     }
 
-    authenticate(name: string): Database {
-        const db = new Database(this.pool);
+    authenticate(name: string): Connection {
+        const db = new Connection(this.pool);
         defaultContainer.set(name, db);
+        return db;
+    }
+}
+
+class Transaction {
+    private conn: mysql.Connection;
+
+    constructor(conn: mysql.Connection) {
+        this.conn = conn;
+    }
+
+    table(tableName: string): Database {
+        const db = new Database(this.conn, null, true);
+        db.tableName = tableName;
+        return db;
+    }
+
+    query(sql: string): Database {
+        const db = new Database(this.conn, null, true);
+        db.sql = sql;
+        return db;
+    }
+
+    rollback(): Promise<void> {
+        return new Promise((resolve, reject) => {
+            this.conn.rollback().then(() => {
+                resolve();
+            });
+        })
+    }
+
+    commit(): Promise<void> {
+        return new Promise((resolve, reject) => {
+            this.conn.commit().then(() => {
+                resolve();
+            });
+        })
+    }
+}
+
+class Connection {
+    private client: any;
+
+    constructor(client: any) {
+        this.client = client;
+    }
+
+    getConnection(): Promise<mysql.Connection> {
+        const self = this;
+        return new Promise(async (resolve, reject) => {
+            let conn: mysql.Connection;
+            try {
+                conn = await self.client.acquire();
+                resolve(conn)
+            } catch (e) {
+                reject(e);
+            }
+        })
+    }
+
+    beginTransaction(): Promise<Transaction> {
+        const self = this;
+        return new Promise(async (resolve, reject) => {
+            try {
+                const conn = await self.getConnection();
+                await conn.beginTransaction();
+                const tran = new Transaction(conn);
+                resolve(tran);
+            } catch (e) {
+                reject(e);
+            }
+        })
+    }
+
+    table(tableName: string): Database {
+        const db = new Database(null, this.client, false);
+        db.tableName = tableName;
+        return db;
+    }
+
+    query(sql: string): Database {
+        const db = new Database(null, this.client, false);
+        db.sql = sql;
         return db;
     }
 }
 
 class Database {
     sql: string = '';
-    private tableName: string = '';
-    private client: mysql.Pool;
-    private logsFlag: boolean = false;
+    tableName: string = '';
+    private conn: mysql.Connection;
+    private client: any;
+    private logsFlag: boolean;
+    private isTransaction: boolean;
 
-    constructor(client: mysql.Pool) {
-        this.client = client;
-    }
-
-
-    table(tableName: string): Database {
-        this.tableName = tableName;
-        return this;
-    }
-
-    query(sql: string): Database {
-        this.sql = sql;
-        return this;
+    constructor(conn: mysql.Connection, client?: any, isTransaction?: boolean) {
+        this.conn = conn;
+        if (client) {
+            this.client = client;
+        }
+        this.isTransaction = isTransaction;
     }
 
     select(): Select {
@@ -99,30 +194,35 @@ class Database {
 
     exec(): Promise<any> {
         const self = this;
-        return new Promise((resolve, reject) => {
-            self.client.getConnection((err, conn) => {
-                if (err) {
+        return new Promise(async (resolve, reject) => {
+            if (self.isTransaction) {
+                try {
+                    const vals = await self.conn.query(self.sql);
+                    if (this.logsFlag) {
+                        console.log(`[sql][success][${self.sql}]`);
+                    }
+                    resolve(vals[0])
+                } catch(e) {
                     if (this.logsFlag) {
                         console.log(`[sql][error][${self.sql}]`);
                     }
-                    reject(err);
-                } else {
-                    conn.query(self.sql, (qerr, vals) => {
-                        conn.release();
-                        if (qerr) {
-                            if (this.logsFlag) {
-                                console.log(`[sql][error][${self.sql}]`);
-                            }
-                            reject(qerr);
-                        } else {
-                            if (this.logsFlag) {
-                                console.log(`[sql][success][${self.sql}]`);
-                            }
-                            resolve(vals)
-                        }
-                    })
+                    reject(e);
                 }
-            })
+            } else {
+                try {
+                    const conn: mysql.Connection = await self.client.acquire();
+                    const vals = await conn.query(self.sql);
+                    if (this.logsFlag) {
+                        console.log(`[sql][success][${self.sql}]`);
+                    }
+                    resolve(vals[0])
+                } catch(e) {
+                    if (this.logsFlag) {
+                        console.log(`[sql][error][${self.sql}]`);
+                    }
+                    reject(e);
+                }
+            }
         })
     }
 }
@@ -214,13 +314,19 @@ class Search {
             for (let i = 0; i < createValuesList.length; i++) {
                 if (i === createValuesList.length - 1) {
                     if (typeof createValuesList[i] === 'string') {
-                        createValues = createValues + `'${createValuesList[i]}'`;
+                        const str_tmp = JSON.stringify({ a: createValuesList[i] }).substring(6);
+                        createValues = createValues + `"${str_tmp.substr(0, str_tmp.length - 2)}"`;
+                    } else if (createValuesList[i] instanceof Date) {
+                        createValues = createValues + `'${dayjs(createValuesList[i]).format('YYYY-MM-DD HH:mm:ss')}'`;
                     } else {
                         createValues = createValues + createValuesList[i];
                     }
                 } else {
                     if (typeof createValuesList[i] === 'string') {
-                        createValues = createValues + `'${createValuesList[i]}'` + ', ';
+                        const str_tmp = JSON.stringify({ a: createValuesList[i] }).substring(6);
+                        createValues = createValues + `"${str_tmp.substr(0, str_tmp.length - 2)}"` + ', ';
+                    } else if (createValuesList[i] instanceof Date) {
+                        createValues = createValues + `'${dayjs(createValuesList[i]).format('YYYY-MM-DD HH:mm:ss')}'` + ', ';
                     } else {
                         createValues = createValues + createValuesList[i] + ', ';
                     }
@@ -235,7 +341,10 @@ class Search {
             const setValuesList = [];
             for (const item of setFieldsList) {
                 if (typeof this.setValues[item] === 'string') {
-                    setValuesList.push(`${item}='${this.setValues[item]}'`);
+                    const str_tmp = JSON.stringify({ a: this.setValues[item] }).substring(6);
+                    setValuesList.push(`${item}="${str_tmp.substr(0, str_tmp.length - 2)}"`);
+                } else if (this.setValues[item] instanceof Date) {
+                    setValuesList.push(`${item}=${dayjs(this.setValues[item]).format('YYYY-MM-DD HH:mm:ss')}`);
                 } else {
                     setValuesList.push(`${item}=${this.setValues[item]}`);
                 }
@@ -433,4 +542,4 @@ class Select {
     }
 }
 
-export {Orm, Database, getConnection};
+export { Orm, Database, getConnection, Connection };
