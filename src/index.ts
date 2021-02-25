@@ -31,7 +31,7 @@ class Orm {
     private readonly database: string;
     private readonly pool: mysql.Pool;
 
-    constructor(host: string, port: number, username: string, password: string, database: string) {
+    constructor(host: string, port: number, username: string, password: string, database: string, pool?: {max: number, min: number}) {
         this.host = host;
         this.port = port;
         this.username = username;
@@ -44,6 +44,10 @@ class Orm {
         //     port: this.port,
         //     database: this.database,
         // });
+        if (!pool) {
+            pool.max = 5;
+            pool.min = 0;
+        }
         this.pool = genericPool.createPool({
             create: () => mysql.createConnection({
                 host: this.host,
@@ -70,9 +74,11 @@ class Orm {
 
 class Transaction {
     private conn: mysql.Connection;
+    private client: any;
 
-    constructor(conn: mysql.Connection) {
+    constructor(conn: mysql.Connection, client: any) {
         this.conn = conn;
+        this.client = client;
     }
 
     table(tableName: string): Database {
@@ -90,6 +96,7 @@ class Transaction {
     rollback(): Promise<void> {
         return new Promise((resolve, reject) => {
             this.conn.rollback().then(() => {
+                this.client.release(this.conn);
                 resolve();
             });
         })
@@ -98,6 +105,7 @@ class Transaction {
     commit(): Promise<void> {
         return new Promise((resolve, reject) => {
             this.conn.commit().then(() => {
+                this.client.release(this.conn);
                 resolve();
             });
         })
@@ -130,7 +138,7 @@ class Connection {
             try {
                 const conn = await self.getConnection();
                 await conn.beginTransaction();
-                const tran = new Transaction(conn);
+                const tran = new Transaction(conn, self.client);
                 resolve(tran);
             } catch (e) {
                 reject(e);
@@ -211,6 +219,7 @@ class Database {
             } else {
                 try {
                     const conn: mysql.Connection = await self.client.acquire();
+                    self.client.release(conn);
                     const vals = await conn.query(self.sql);
                     if (this.logsFlag) {
                         console.log(`[sql][success][${self.sql}]`);
