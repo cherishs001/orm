@@ -45,8 +45,10 @@ class Orm {
         //     database: this.database,
         // });
         if (!pool) {
-            pool.max = 5;
-            pool.min = 0;
+            pool = {
+                max: 5,
+                min: 0,
+            };
         }
         this.pool = genericPool.createPool({
             create: () => mysql.createConnection({
@@ -59,8 +61,7 @@ class Orm {
             destroy: (connection: mysql.Connection) => connection.end(),
             validate: (connection: mysql.Connection) => connection.query(`SELECT 1`).then(() => true, () => false),
         }, {
-            max: 5,
-            min: 0,
+            ...pool,
             testOnBorrow: true,
         })
     }
