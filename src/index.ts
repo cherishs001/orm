@@ -31,7 +31,7 @@ class Orm {
     private readonly database: string;
     private readonly pool: mysql.Pool;
 
-    constructor(host: string, port: number, username: string, password: string, database: string, pool?: {max: number, min: number}) {
+    constructor(host: string, port: number, username: string, password: string, database: string, pool?: { max?: number, min?: number, idleTimeoutMillis?: number, evictionRunIntervalMillis?: number }) {
         this.host = host;
         this.port = port;
         this.username = username;
@@ -47,19 +47,29 @@ class Orm {
         if (!pool) {
             pool = {
                 max: 5,
-                min: 0,
+                min: 1,
+                idleTimeoutMillis: 3600000,
+                evictionRunIntervalMillis: 300000,
             };
         }
         this.pool = genericPool.createPool({
-            create: () => mysql.createConnection({
-                host: this.host,
-                user: this.username,
-                password: this.password,
-                port: this.port,
-                database: this.database,
-            }),
-            destroy: (connection: mysql.Connection) => connection.end(),
-            validate: (connection: mysql.Connection) => connection.query(`SELECT 1`).then(() => true, () => false),
+            create: () => {
+                console.log('新建数据库连接...ok')
+                return mysql.createConnection({
+                    host: this.host,
+                    user: this.username,
+                    password: this.password,
+                    port: this.port,
+                    database: this.database,
+                })
+            },
+            destroy: (connection: mysql.Connection) => {
+                console.log('清理闲置的数据库连接...ok');
+                return connection.end();
+            },
+            validate: (connection: mysql.Connection) => {
+                return connection.query(`SELECT 1`).then(() => true, () => false)
+            },
         }, {
             ...pool,
             testOnBorrow: true,
@@ -204,16 +214,19 @@ class Database {
     exec(): Promise<any> {
         const self = this;
         return new Promise(async (resolve, reject) => {
+            const start_time = new Date().getTime();
             if (self.isTransaction) {
                 try {
                     const vals = await self.conn.query(self.sql);
+                    const end_time = new Date().getTime();
                     if (this.logsFlag) {
-                        console.log(`[sql][success][${self.sql}]`);
+                        console.log(`[sql][success][${self.sql}][${end_time - start_time}ms]`);
                     }
                     resolve(vals[0])
-                } catch(e) {
+                } catch (e) {
+                    const end_time = new Date().getTime();
                     if (this.logsFlag) {
-                        console.log(`[sql][error][${self.sql}]`);
+                        console.log(`[sql][error][${self.sql}][${end_time - start_time}ms]`);
                     }
                     reject(e);
                 }
@@ -222,13 +235,15 @@ class Database {
                     const conn: mysql.Connection = await self.client.acquire();
                     self.client.release(conn);
                     const vals = await conn.query(self.sql);
+                    const end_time = new Date().getTime();
                     if (this.logsFlag) {
-                        console.log(`[sql][success][${self.sql}]`);
+                        console.log(`[sql][success][${self.sql}][${end_time - start_time}ms]`);
                     }
                     resolve(vals[0])
-                } catch(e) {
+                } catch (e) {
+                    const end_time = new Date().getTime();
                     if (this.logsFlag) {
-                        console.log(`[sql][error][${self.sql}]`);
+                        console.log(`[sql][error][${self.sql}][${end_time - start_time}ms]`);
                     }
                     reject(e);
                 }
@@ -281,13 +296,15 @@ class Search {
                         for (let i = 0; i < item.args[index].length; i = i + 1) {
                             if (i === item.args[index].length - 1) {
                                 if (typeof item.args[index][i] === 'string') {
-                                    args = args + `'${item.args[index][i]}'`;
+                                    const str_tmp = JSON.stringify({ a: item.args[index][i] }).substring(6);
+                                    args = args + `"${str_tmp.substr(0, str_tmp.length - 2)}"`;
                                 } else {
                                     args = args + item.args[index][i];
                                 }
                             } else {
                                 if (typeof item.args[index][i] === 'string') {
-                                    args = args + `'${item.args[index][i]}'` + ', ';
+                                    const str_tmp = JSON.stringify({ a: item.args[index][i] }).substring(6);
+                                    args = args + `"${str_tmp.substr(0, str_tmp.length - 2)}"` + ', ';
                                 } else {
                                     args = args + item.args[index][i] + ', ';
                                 }
@@ -295,7 +312,8 @@ class Search {
                         }
                         query = query.replace('?', args);
                     } else if (typeof item.args[index] === 'string') {
-                        query = query.replace('?', `'${item.args[index]}'`);
+                        const str_tmp = JSON.stringify({ a: item.args[index] }).substring(6);
+                        query = query.replace('?', `"${str_tmp.substr(0, str_tmp.length - 2)}"`);
                     } else {
                         query = query.replace('?', item.args[index]);
                     }

@@ -1,17 +1,19 @@
 import { Orm, getConnection } from '../src/index';
+import * as http from 'http';
+
+const o = new Orm('10.26.136.5', 3306, 'root', '123456', 'api_gateway');
+const s = o.authenticate('mysql');
 
 (async () => {
-    const o = new Orm('10.26.136.5', 3306, 'root', '123456', 'api_gateway');
-    const s = o.authenticate('mysql');
-
     const res = await getConnection('mysql')
         .table('api_gateway.test')
         .select()
+        .limit(1)
         .finish()
         .exec();
     console.log(res);
 
-    for (let i = 0; i < 100; i++) {
+    for (let i = 0; i < 5; i++) {
         await s.table('api_gateway.test')
             .logs(true)
             .select()
@@ -32,5 +34,15 @@ import { Orm, getConnection } from '../src/index';
         await tran.commit();
     }
 
-    process.exit(0);
+    // process.exit(0);
 })()
+
+const server = http.createServer(async (req, res) => {
+    console.log(123);
+    const r = await s.query(`select sleep(12);`).logs(true).exec();
+    console.log(r);
+    res.writeHead(200);
+    res.end('');
+});
+
+server.listen(3000);
