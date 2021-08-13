@@ -54,7 +54,6 @@ class Orm {
         }
         this.pool = genericPool.createPool({
             create: () => {
-                console.log('新建数据库连接...ok')
                 return mysql.createConnection({
                     host: this.host,
                     user: this.username,
@@ -64,7 +63,6 @@ class Orm {
                 })
             },
             destroy: (connection: mysql.Connection) => {
-                console.log('清理闲置的数据库连接...ok');
                 return connection.end();
             },
             validate: (connection: mysql.Connection) => {
